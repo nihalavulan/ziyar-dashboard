@@ -25,8 +25,8 @@ Node/Express-style API layer (via Next.js API routes). Fully mobile-friendly.
 
    ```bash
    MONGODB_URI=          # <-- paste your MongoDB Atlas connection string here
-   ADMIN_EMAIL=ziyarmajlis@gmail.com
-   ADMIN_PASSWORD=Admin@Ziyar
+   ADMIN_EMAIL=admin@example.com
+   ADMIN_PASSWORD=change_me
    JWT_SECRET=change_this_to_a_long_random_secret_string
    ```
 
@@ -43,10 +43,9 @@ Node/Express-style API layer (via Next.js API routes). Fully mobile-friendly.
 
 ## Login
 
-Use the admin credentials from `.env.local`:
-
-- **Email:** `ziyarmajlis@gmail.com`
-- **Password:** `Admin@Ziyar`
+Sign in with the admin credentials configured in your `.env.local`
+(`ADMIN_EMAIL` and `ADMIN_PASSWORD`). These are not committed to the repo — set
+your own values locally.
 
 ## Project structure
 

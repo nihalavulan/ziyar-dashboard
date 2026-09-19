@@ -51,9 +51,9 @@ export async function GET(request: Request) {
 
     const rows = suppliers.map((s: any) => {
       const sid = String(s._id);
-      const balance = (s.openingBalance ?? 0) + (priorNet.get(sid) ?? 0);
+      const balance = Math.max(0, (s.openingBalance ?? 0) + (priorNet.get(sid) ?? 0));
       const t = today.get(sid) ?? { purchase: 0, paid: 0 };
-      const total = balance + t.purchase - t.paid;
+      const total = Math.max(0, balance + t.purchase - t.paid);
       return {
         supplierId: sid,
         name: s.name,

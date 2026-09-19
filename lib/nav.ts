@@ -7,4 +7,5 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: "📊" },
   { label: "Daily entry", href: "/dashboard/daily-entry", icon: "📝" },
+  { label: "Statements", href: "/dashboard/statements", icon: "📄" },
 ];

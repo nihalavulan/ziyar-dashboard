@@ -50,7 +50,15 @@ export default function DailyEntryPage() {
   // Locale-formatted dates differ between server and browser; render them only
   // after mount to avoid hydration mismatches.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const saved = localStorage.getItem("ziyar_wa_phone");
+      if (saved) setWaPhone(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,6 +74,9 @@ export default function DailyEntryPage() {
   // edit-balances mode
   const [editingBalance, setEditingBalance] = useState(false);
   const [savingBalance, setSavingBalance] = useState(false);
+
+  // whatsapp share
+  const [waPhone, setWaPhone] = useState("+919744522092");
 
   const load = useCallback(async (d: string) => {
     setLoading(true);
@@ -89,8 +100,9 @@ export default function DailyEntryPage() {
   }, [date, load]);
 
   function updateRow(id: string, field: "purchase" | "paid", value: string) {
-    const num = value === "" ? 0 : Number(value);
+    let num = value === "" ? 0 : Number(value);
     if (Number.isNaN(num)) return;
+    if (num < 0) num = 0;
     setRows((prev) =>
       prev.map((r) =>
         r.supplierId === id
@@ -102,12 +114,13 @@ export default function DailyEntryPage() {
   }
 
   function computeTotal(r: Row) {
-    return r.balance + r.purchase - r.paid;
+    return Math.max(0, r.balance + r.purchase - r.paid);
   }
 
   function updateBalance(id: string, value: string) {
-    const num = value === "" ? 0 : Number(value);
+    let num = value === "" ? 0 : Number(value);
     if (Number.isNaN(num)) return;
+    if (num < 0) num = 0;
     setRows((prev) =>
       prev.map((r) => (r.supplierId === id ? { ...r, balance: num } : r))
     );
@@ -177,7 +190,7 @@ export default function DailyEntryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName.trim(),
-          openingBalance: Number(newBalance) || 0,
+          openingBalance: Math.max(0, Number(newBalance) || 0),
         }),
       });
       const data = await res.json();
@@ -268,6 +281,51 @@ export default function DailyEntryPage() {
     doc.text(`Generated ${new Date().toLocaleString()}`, 14, y);
 
     doc.save(`daily-entry-${date}.pdf`);
+  }
+
+  // Build a concise text summary of the day for WhatsApp.
+  function buildWhatsappText() {
+    const active = rows.filter((r) => r.purchase > 0 || r.paid > 0);
+    const lines: string[] = [];
+    lines.push(`*Ziyar Majlis — Daily Entry*`);
+    lines.push(prettyDate(date));
+    lines.push("");
+    if (active.length > 0) {
+      lines.push("Today's activity:");
+      active.forEach((r) => {
+        lines.push(
+          `• ${r.name}: Pur ${fmt(r.purchase)}, Paid ${fmt(r.paid)}, Bal ${fmt(
+            computeTotal(r)
+          )}`
+        );
+      });
+      lines.push("");
+    }
+    lines.push(`Purchases today: ${fmt(totals.purchase)}`);
+    lines.push(`Paid today: ${fmt(totals.paid)}`);
+    lines.push(`Total pending (all suppliers): ${fmt(totals.total)}`);
+    lines.push("");
+    lines.push("(Full ledger PDF attached)");
+    return lines.join("\n");
+  }
+
+  function sendWhatsApp() {
+    // Persist the number for next time.
+    try {
+      localStorage.setItem("ziyar_wa_phone", waPhone);
+    } catch {
+      /* ignore */
+    }
+    // Download the PDF so it can be attached in WhatsApp.
+    exportPdf();
+    // wa.me needs digits only (country code + number, no + or spaces).
+    const digits = waPhone.replace(/[^0-9]/g, "");
+    const text = encodeURIComponent(buildWhatsappText());
+    // Force WhatsApp Web (web.whatsapp.com) with the number + message prefilled.
+    const url = digits
+      ? `https://web.whatsapp.com/send?phone=${digits}&text=${text}`
+      : `https://web.whatsapp.com/send?text=${text}`;
+    window.open(url, "_blank");
   }
 
   const isToday = date === todayStr();
@@ -370,6 +428,33 @@ export default function DailyEntryPage() {
         )}
       </p>
 
+      {/* WhatsApp share */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-green-200 bg-green-50/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <span className="text-lg" aria-hidden>
+            🟢
+          </span>
+          <span>Share today&apos;s entry on WhatsApp</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="tel"
+            value={waPhone}
+            onChange={(e) => setWaPhone(e.target.value)}
+            placeholder="+91…"
+            className="w-44 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            title="WhatsApp number with country code"
+          />
+          <button
+            onClick={sendWhatsApp}
+            disabled={rows.length === 0}
+            className="whitespace-nowrap rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+          >
+            Send to WhatsApp
+          </button>
+        </div>
+      </div>
+
       {/* Add supplier form */}
       {showAdd && (
         <form
@@ -396,6 +481,7 @@ export default function DailyEntryPage() {
               type="number"
               inputMode="decimal"
               step="any"
+              min={0}
               value={newBalance}
               onChange={(e) => setNewBalance(e.target.value)}
               placeholder="0"
@@ -467,6 +553,7 @@ export default function DailyEntryPage() {
                         type="number"
                         inputMode="decimal"
                         step="any"
+                        min={0}
                         value={r.balance === 0 ? "" : r.balance}
                         onChange={(e) =>
                           updateBalance(r.supplierId, e.target.value)
@@ -483,6 +570,7 @@ export default function DailyEntryPage() {
                       type="number"
                       inputMode="decimal"
                       step="any"
+                      min={0}
                       value={r.purchase === 0 ? "" : r.purchase}
                       onChange={(e) =>
                         updateRow(r.supplierId, "purchase", e.target.value)
@@ -496,6 +584,7 @@ export default function DailyEntryPage() {
                       type="number"
                       inputMode="decimal"
                       step="any"
+                      min={0}
                       value={r.paid === 0 ? "" : r.paid}
                       onChange={(e) =>
                         updateRow(r.supplierId, "paid", e.target.value)
