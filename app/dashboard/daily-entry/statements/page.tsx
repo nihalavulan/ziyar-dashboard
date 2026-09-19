@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import SectionTabs from "@/components/SectionTabs";
+
+const TABS = [
+  { label: "Entry", href: "/dashboard/daily-entry" },
+  { label: "Statements", href: "/dashboard/daily-entry/statements" },
+];
 
 interface StmtRow {
   date: string;
@@ -227,6 +233,7 @@ export default function StatementsPage() {
 
   return (
     <div className="space-y-5">
+      <SectionTabs tabs={TABS} />
       <div>
         <h2 className="text-xl font-semibold text-slate-900">Statements</h2>
         <p className="mt-1 text-sm text-slate-500">

@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import SectionTabs from "@/components/SectionTabs";
+
+const TABS = [
+  { label: "Entry", href: "/dashboard/daily-entry" },
+  { label: "Statements", href: "/dashboard/daily-entry/statements" },
+];
 
 interface Row {
   supplierId: string;
@@ -332,6 +338,7 @@ export default function DailyEntryPage() {
 
   return (
     <div className="space-y-5">
+      <SectionTabs tabs={TABS} />
       {/* Header / controls */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
