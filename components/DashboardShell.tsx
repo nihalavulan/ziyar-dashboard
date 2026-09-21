@@ -28,6 +28,17 @@ export default function DashboardShell({
     );
   }, []);
 
+  // Stop the mouse wheel from changing focused number inputs — scroll the page
+  // instead. (Blurring the field lets the wheel scroll normally.)
+  useEffect(() => {
+    const onWheel = () => {
+      const el = document.activeElement as HTMLInputElement | null;
+      if (el && el.tagName === "INPUT" && el.type === "number") el.blur();
+    };
+    document.addEventListener("wheel", onWheel, { passive: true });
+    return () => document.removeEventListener("wheel", onWheel);
+  }, []);
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
