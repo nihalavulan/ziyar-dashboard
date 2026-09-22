@@ -134,6 +134,7 @@ export default function StaffSalaryPage() {
             staffId: r.staffId,
             present: r.present,
             pending: r.pending,
+            salary: r.salary,
           })),
           partTime: partTime.filter((p) => p.name.trim()),
         }),
@@ -400,7 +401,21 @@ export default function StaffSalaryPage() {
                 <tr key={r.staffId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{r.name}</td>
                   <td className="px-4 py-2.5 text-slate-500">{r.section || "—"}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{fmt(r.salary)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={r.salary === 0 ? "" : r.salary}
+                      onChange={(e) =>
+                        setRow(r.staffId, {
+                          salary: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      placeholder="0"
+                      className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                    />
+                  </td>
                   <td className="px-4 py-2.5">
                     <Attendance
                       present={r.present}

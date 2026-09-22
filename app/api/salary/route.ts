@@ -33,9 +33,13 @@ export async function GET(request: Request) {
       .sort({ date: 1 })
       .lean();
 
-    // Latest prior attendance per staff (later dates overwrite earlier).
+    // Latest prior attendance + salary per staff (later dates overwrite earlier).
     const lastPresent = new Map<string, boolean>();
-    for (const e of priorEntries) lastPresent.set(String(e.staff), e.present);
+    const lastSalary = new Map<string, number>();
+    for (const e of priorEntries) {
+      lastPresent.set(String(e.staff), e.present);
+      lastSalary.set(String(e.staff), e.salary ?? 0);
+    }
 
     const todayByStaff = new Map<string, any>();
     const partTime: any[] = [];
@@ -62,7 +66,7 @@ export async function GET(request: Request) {
         staffId: sid,
         name: s.name,
         section: s.section,
-        salary: s.salary,
+        salary: lastSalary.has(sid) ? lastSalary.get(sid) : s.salary,
         present: lastPresent.has(sid) ? lastPresent.get(sid) : true,
         pending: false,
       };
@@ -121,7 +125,7 @@ export async function POST(request: Request) {
                 date,
                 name: s.name,
                 section: s.section,
-                salary: Math.max(0, Number(s.salary) || 0),
+                salary: Math.max(0, Number(r.salary ?? s.salary) || 0),
                 present,
                 pending: present ? Boolean(r.pending) : false,
                 isPartTime: false,
