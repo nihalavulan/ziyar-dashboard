@@ -40,8 +40,9 @@ export async function GET(request: Request) {
     const todayByStaff = new Map<string, any>();
     const partTime: any[] = [];
     for (const e of todayEntries) {
-      if (e.isPartTime || !e.staff) partTime.push(e);
-      else todayByStaff.set(String(e.staff), e);
+      if (e.isPartTime) partTime.push(e);
+      else if (e.staff) todayByStaff.set(String(e.staff), e);
+      // manual pending entries (staff null, not part-time) live only in Pending
     }
 
     const rows = staff.map((s: any) => {

@@ -17,6 +17,9 @@ const SalaryEntrySchema = new Schema(
     present: { type: Boolean, default: true },
     pending: { type: Boolean, default: false },
     isPartTime: { type: Boolean, default: false },
+    // Manually-added pending (e.g. legacy amounts owed before using the app);
+    // lives only in the Pending view, not the daily attendance sheet.
+    manual: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

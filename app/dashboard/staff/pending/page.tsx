@@ -33,6 +33,12 @@ function prettyDate(s: string) {
 function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
+function todayStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 export default function PendingPage() {
   const [people, setPeople] = useState<Person[]>([]);
@@ -41,6 +47,55 @@ export default function PendingPage() {
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // add-pending form
+  const [staffNames, setStaffNames] = useState<{ name: string; section: string }[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [aName, setAName] = useState("");
+  const [aSection, setASection] = useState("");
+  const [aSalary, setASalary] = useState("");
+  const [aDate, setADate] = useState(todayStr());
+
+  useEffect(() => {
+    fetch("/api/staff")
+      .then((r) => r.json())
+      .then((d) =>
+        setStaffNames(
+          (d.staff || []).map((s: any) => ({ name: s.name, section: s.section }))
+        )
+      )
+      .catch(() => {});
+  }, []);
+
+  async function addPending(e: React.FormEvent) {
+    e.preventDefault();
+    if (!aName.trim() || !(Number(aSalary) > 0)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/salary/pending/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: aName.trim(),
+          section: aSection.trim(),
+          salary: Number(aSalary),
+          date: aDate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add pending.");
+      setAName("");
+      setASection("");
+      setASalary("");
+      setShowAdd(false);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,8 +148,88 @@ export default function PendingPage() {
             {fmt(grandTotal)}
           </p>
         </div>
-        <span className="text-3xl">🕒</span>
+        <button
+          onClick={() => setShowAdd((s) => !s)}
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+        >
+          + Add pending
+        </button>
       </div>
+
+      {/* Add pending form */}
+      {showAdd && (
+        <form
+          onSubmit={addPending}
+          className="grid gap-3 rounded-2xl border border-brand-200 bg-brand-50/50 p-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end"
+        >
+          <div className="lg:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-600">Name</label>
+            <input
+              list="staff-names"
+              value={aName}
+              onChange={(e) => {
+                setAName(e.target.value);
+                const m = staffNames.find((s) => s.name === e.target.value);
+                if (m) setASection(m.section);
+              }}
+              placeholder="Staff name"
+              autoFocus
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            />
+            <datalist id="staff-names">
+              {staffNames.map((s) => (
+                <option key={s.name} value={s.name} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Section</label>
+            <input
+              value={aSection}
+              onChange={(e) => setASection(e.target.value)}
+              placeholder="Section"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Amount</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={aSalary}
+              onChange={(e) => setASalary(e.target.value)}
+              placeholder="0"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Date</label>
+            <input
+              type="date"
+              value={aDate}
+              onChange={(e) => setADate(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            />
+          </div>
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-5">
+            <button
+              type="submit"
+              disabled={busy}
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              Add pending
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-white"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && (
         <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
