@@ -12,16 +12,16 @@ interface Row {
   staffId: string;
   name: string;
   section: string;
-  salary: number;
+  salary: number; // primary / fixed
+  paid: number; // today paid
   present: boolean;
-  pending: boolean;
 }
 interface PartTime {
   name: string;
   section: string;
   salary: number;
+  paid: number;
   present: boolean;
-  pending: boolean;
 }
 
 function todayStr() {
@@ -49,6 +49,9 @@ function prettyDate(s: string) {
 }
 function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+function pendingOf(r: { salary: number; paid: number; present: boolean }) {
+  return r.present ? Math.max(0, r.salary - r.paid) : 0;
 }
 
 export default function StaffSalaryPage() {
@@ -81,8 +84,8 @@ export default function StaffSalaryPage() {
           name: p.name,
           section: p.section,
           salary: p.salary,
+          paid: p.paid,
           present: p.present,
-          pending: p.pending,
         }))
       );
       setDirty(false);
@@ -100,8 +103,18 @@ export default function StaffSalaryPage() {
   }, [date, load]);
 
   function setRow(id: string, patch: Partial<Row>) {
+    setRows((prev) => prev.map((r) => (r.staffId === id ? { ...r, ...patch } : r)));
+    setDirty(true);
+  }
+  // Editing the primary salary pulls "today paid" along when it was a full payment.
+  function setSalary(id: string, value: string) {
+    const salary = Math.max(0, Number(value) || 0);
     setRows((prev) =>
-      prev.map((r) => (r.staffId === id ? { ...r, ...patch } : r))
+      prev.map((r) =>
+        r.staffId === id
+          ? { ...r, salary, paid: r.paid === r.salary ? salary : r.paid }
+          : r
+      )
     );
     setDirty(true);
   }
@@ -112,7 +125,7 @@ export default function StaffSalaryPage() {
   function addPT() {
     setPartTime((prev) => [
       ...prev,
-      { name: "", section: "", salary: 0, present: true, pending: false },
+      { name: "", section: "", salary: 0, paid: 0, present: true },
     ]);
     setDirty(true);
   }
@@ -132,9 +145,11 @@ export default function StaffSalaryPage() {
           date,
           rows: rows.map((r) => ({
             staffId: r.staffId,
-            present: r.present,
-            pending: r.pending,
+            name: r.name,
+            section: r.section,
             salary: r.salary,
+            paid: r.paid,
+            present: r.present,
           })),
           partTime: partTime.filter((p) => p.name.trim()),
         }),
@@ -189,19 +204,12 @@ export default function StaffSalaryPage() {
   }
 
   const totals = useMemo(() => {
-    const all = [
-      ...rows.map((r) => ({ salary: r.salary, present: r.present, pending: r.pending })),
-      ...partTime.map((p) => ({ salary: p.salary, present: p.present, pending: p.pending })),
-    ];
+    const all = [...rows, ...partTime];
     const present = all.filter((x) => x.present);
     const payable = present.reduce((a, x) => a + x.salary, 0);
-    const pending = present.filter((x) => x.pending).reduce((a, x) => a + x.salary, 0);
-    return {
-      presentCount: present.length,
-      payable,
-      pending,
-      payNow: payable - pending,
-    };
+    const paid = present.reduce((a, x) => a + x.paid, 0);
+    const pending = present.reduce((a, x) => a + Math.max(0, x.salary - x.paid), 0);
+    return { presentCount: present.length, payable, paid, pending };
   }, [rows, partTime]);
 
   async function exportPdf() {
@@ -214,45 +222,53 @@ export default function StaffSalaryPage() {
     doc.setTextColor(120);
     doc.text(prettyDate(date), 14, 24);
 
-    const body = [
-      ...rows.map((r) => [
-        r.name,
-        r.section,
-        r.present ? fmt(r.salary) : "-",
-        r.present ? (r.pending ? "Pending" : "Paid") : "Absent",
-      ]),
-      ...partTime
-        .filter((p) => p.name.trim())
-        .map((p) => [
-          `${p.name} (PT)`,
-          p.section,
-          p.present ? fmt(p.salary) : "-",
-          p.present ? (p.pending ? "Pending" : "Paid") : "Absent",
-        ]),
-    ];
+    const body = [...rows, ...partTime.filter((p) => p.name.trim())].map((r: any) => [
+      r.staffId ? r.name : `${r.name} (PT)`,
+      r.section,
+      r.present ? fmt(r.salary) : "Absent",
+      r.present ? fmt(r.paid) : "-",
+      r.present ? fmt(Math.max(0, r.salary - r.paid)) : "-",
+    ]);
 
     autoTable(doc, {
       startY: 30,
-      head: [["Name", "Section", "Salary", "Status"]],
+      head: [["Name", "Section", "Salary", "Paid", "Pending"]],
       body,
-      foot: [
-        ["Payable", "", fmt(totals.payable), ""],
-        ["Paid now", "", fmt(totals.payNow), ""],
-        ["Pending", "", fmt(totals.pending), ""],
-      ],
+      foot: [["Total", "", fmt(totals.payable), fmt(totals.paid), fmt(totals.pending)]],
       headStyles: { fillColor: [0, 36, 34] },
       footStyles: { fillColor: [241, 245, 249], textColor: 20, fontStyle: "bold" },
       styles: { fontSize: 9, cellPadding: 2.5 },
-      columnStyles: { 2: { halign: "right" } },
+      columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
     });
     doc.save(`daily-salary-${date}.pdf`);
   }
 
   const isToday = date === todayStr();
 
+  const SaveBtn = (
+    <button
+      onClick={save}
+      disabled={saving || !dirty}
+      className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+    >
+      {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+    </button>
+  );
+
   return (
     <div className="space-y-5">
       <SectionTabs tabs={TABS} />
+
+      {/* Unsaved reminder */}
+      {dirty && (
+        <div className="sticky top-16 z-20 flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 shadow-sm">
+          <span>
+            <strong className="font-semibold">You have unsaved changes.</strong>{" "}
+            Don&apos;t forget to save.
+          </span>
+          {SaveBtn}
+        </div>
+      )}
 
       {/* Controls */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -300,13 +316,7 @@ export default function StaffSalaryPage() {
           >
             Export PDF
           </button>
-          <button
-            onClick={save}
-            disabled={saving || !dirty}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : dirty ? "Save" : "Saved"}
-          </button>
+          {SaveBtn}
         </div>
       </div>
 
@@ -320,240 +330,152 @@ export default function StaffSalaryPage() {
         >
           <div className="flex-1">
             <label className="mb-1 block text-xs font-medium text-slate-600">Name</label>
-            <input
-              value={nName}
-              onChange={(e) => setNName(e.target.value)}
-              placeholder="e.g. Rahim"
-              autoFocus
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-            />
+            <input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="e.g. Rahim" autoFocus
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
           </div>
           <div className="flex-1">
             <label className="mb-1 block text-xs font-medium text-slate-600">Section</label>
-            <input
-              value={nSection}
-              onChange={(e) => setNSection(e.target.value)}
-              placeholder="e.g. Kitchen"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-            />
+            <input value={nSection} onChange={(e) => setNSection(e.target.value)} placeholder="e.g. Kitchen"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
           </div>
           <div className="w-full sm:w-36">
-            <label className="mb-1 block text-xs font-medium text-slate-600">Daily salary</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              value={nSalary}
-              onChange={(e) => setNSalary(e.target.value)}
-              placeholder="0"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-            />
+            <label className="mb-1 block text-xs font-medium text-slate-600">Primary salary</label>
+            <input type="number" inputMode="decimal" min={0} value={nSalary} onChange={(e) => setNSalary(e.target.value)} placeholder="0"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
           </div>
           <div className="flex gap-2">
-            <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              Add
-            </button>
-            <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-white">
-              Cancel
-            </button>
+            <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Add</button>
+            <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-white">Cancel</button>
           </div>
         </form>
       )}
 
-      {error && (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
-      )}
+      {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Present" value={`${totals.presentCount}`} />
-        <Stat label="Payable today" value={fmt(totals.payable)} />
-        <Stat label="Paying now" value={fmt(totals.payNow)} />
-        <Stat label="Marked pending" value={fmt(totals.pending)} primary />
+        <Stat label="Payable" value={fmt(totals.payable)} />
+        <Stat label="Paid today" value={fmt(totals.paid)} />
+        <Stat label="Pending today" value={fmt(totals.pending)} primary />
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Section</th>
-              <th className="px-4 py-3 text-right font-medium">Salary</th>
+              <th className="px-4 py-3 text-right font-medium">Primary salary</th>
+              <th className="px-4 py-3 text-right font-medium">Today paid</th>
+              <th className="px-4 py-3 text-right font-medium">Pending</th>
               <th className="px-4 py-3 text-center font-medium">Attendance</th>
-              <th className="px-4 py-3 text-center font-medium">Pending</th>
               <th className="px-2 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">Loading…</td>
-              </tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                  No staff yet. Click <strong>+ Staff</strong> to add one.
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">No staff yet. Click <strong>+ Staff</strong> to add one.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.staffId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{r.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{r.section || "—"}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      value={r.salary === 0 ? "" : r.salary}
-                      onChange={(e) =>
-                        setRow(r.staffId, {
-                          salary: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
-                      placeholder="0"
-                      className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-                    />
+                  <td className="px-4 py-2">
+                    <input value={r.name} onChange={(e) => setRow(r.staffId, { name: e.target.value })}
+                      className="w-36 rounded-lg border border-transparent px-2 py-1.5 font-medium text-slate-800 outline-none hover:border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                   </td>
-                  <td className="px-4 py-2.5">
-                    <Attendance
-                      present={r.present}
-                      onChange={(present) => setRow(r.staffId, { present, pending: present ? r.pending : false })}
-                    />
+                  <td className="px-4 py-2">
+                    <input value={r.section} onChange={(e) => setRow(r.staffId, { section: e.target.value })} placeholder="—"
+                      className="w-28 rounded-lg border border-transparent px-2 py-1.5 text-slate-600 outline-none hover:border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                   </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={r.pending}
-                      disabled={!r.present}
-                      onChange={(e) => setRow(r.staffId, { pending: e.target.checked })}
-                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:opacity-40"
-                    />
+                  <td className="px-4 py-2 text-right">
+                    <input type="number" inputMode="decimal" min={0} value={r.salary === 0 ? "" : r.salary}
+                      onChange={(e) => setSalary(r.staffId, e.target.value)} placeholder="0"
+                      className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                   </td>
-                  <td className="px-2 py-2.5 text-right">
-                    <button
-                      onClick={() => removeStaff(r.staffId, r.name)}
-                      className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500"
-                      title="Delete staff"
-                    >
-                      ✕
-                    </button>
+                  <td className="px-4 py-2 text-right">
+                    <input type="number" inputMode="decimal" min={0} value={r.paid === 0 ? "" : r.paid} disabled={!r.present}
+                      onChange={(e) => setRow(r.staffId, { paid: Math.max(0, Number(e.target.value) || 0) })} placeholder="0"
+                      className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 disabled:bg-slate-50 disabled:opacity-50" />
+                  </td>
+                  <td className={`px-4 py-2 text-right tabular-nums font-semibold ${pendingOf(r) > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                    {fmt(pendingOf(r))}
+                  </td>
+                  <td className="px-4 py-2">
+                    <Attendance present={r.present} onChange={(present) => setRow(r.staffId, { present, paid: present ? r.salary : 0 })} />
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <button onClick={() => removeStaff(r.staffId, r.name)} className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500" title="Delete staff">✕</button>
                   </td>
                 </tr>
               ))
             )}
 
-            {/* Part-time section */}
+            {/* Part-time */}
             <tr className="bg-slate-50">
-              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Part-time (this day only)
-              </td>
+              <td colSpan={7} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Part-time (this day only)</td>
             </tr>
             {partTime.map((p, i) => (
               <tr key={`pt-${i}`} className="border-b border-slate-50 last:border-0">
                 <td className="px-4 py-2">
-                  <input
-                    value={p.name}
-                    onChange={(e) => setPT(i, { name: e.target.value })}
-                    placeholder="Name"
-                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-                  />
+                  <input value={p.name} onChange={(e) => setPT(i, { name: e.target.value })} placeholder="Name"
+                    className="w-36 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                 </td>
                 <td className="px-4 py-2">
-                  <input
-                    value={p.section}
-                    onChange={(e) => setPT(i, { section: e.target.value })}
-                    placeholder="Section"
-                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-                  />
+                  <input value={p.section} onChange={(e) => setPT(i, { section: e.target.value })} placeholder="Section"
+                    className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    value={p.salary === 0 ? "" : p.salary}
-                    onChange={(e) => setPT(i, { salary: Math.max(0, Number(e.target.value) || 0) })}
-                    placeholder="0"
-                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-                  />
+                  <input type="number" inputMode="decimal" min={0} value={p.salary === 0 ? "" : p.salary}
+                    onChange={(e) => { const salary = Math.max(0, Number(e.target.value) || 0); setPT(i, { salary, paid: p.paid === p.salary ? salary : p.paid }); }}
+                    placeholder="0" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                 </td>
+                <td className="px-4 py-2 text-right">
+                  <input type="number" inputMode="decimal" min={0} value={p.paid === 0 ? "" : p.paid} disabled={!p.present}
+                    onChange={(e) => setPT(i, { paid: Math.max(0, Number(e.target.value) || 0) })} placeholder="0"
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 disabled:bg-slate-50 disabled:opacity-50" />
+                </td>
+                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${pendingOf(p) > 0 ? "text-amber-600" : "text-slate-400"}`}>{fmt(pendingOf(p))}</td>
                 <td className="px-4 py-2">
-                  <Attendance
-                    present={p.present}
-                    onChange={(present) => setPT(i, { present, pending: present ? p.pending : false })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={p.pending}
-                    disabled={!p.present}
-                    onChange={(e) => setPT(i, { pending: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:opacity-40"
-                  />
+                  <Attendance present={p.present} onChange={(present) => setPT(i, { present, paid: present ? p.salary : 0 })} />
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <button
-                    onClick={() => removePT(i)}
-                    className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500"
-                    title="Remove"
-                  >
-                    ✕
-                  </button>
+                  <button onClick={() => removePT(i)} className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500" title="Remove">✕</button>
                 </td>
               </tr>
             ))}
             <tr>
-              <td colSpan={6} className="px-4 py-2.5">
-                <button
-                  onClick={addPT}
-                  className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-brand-300 hover:bg-brand-50"
-                >
-                  + Add part-time worker
-                </button>
+              <td colSpan={7} className="px-4 py-2.5">
+                <button onClick={addPT} className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-brand-300 hover:bg-brand-50">+ Add part-time worker</button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
+      {/* Bottom save */}
+      <div className="flex items-center justify-end gap-3 pt-1">
+        {dirty && <span className="text-sm text-amber-600">Unsaved changes</span>}
+        {SaveBtn}
+      </div>
+
       <p className="px-1 text-xs text-slate-400">
-        Attendance defaults to the previous day. Tick <strong>Pending</strong> to
-        defer that person&apos;s salary — it shows up under the Pending tab to pay
-        later.
+        Edit names, sections and the primary salary inline. <strong>Today paid</strong>{" "}
+        defaults to the primary salary — lower it to pay less (the shortfall shows as
+        Pending and carries to the Pending tab). All changes save together.
       </p>
     </div>
   );
 }
 
-function Attendance({
-  present,
-  onChange,
-}: {
-  present: boolean;
-  onChange: (present: boolean) => void;
-}) {
+function Attendance({ present, onChange }: { present: boolean; onChange: (present: boolean) => void }) {
   return (
     <div className="flex justify-center">
       <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 text-xs">
-        <button
-          onClick={() => onChange(true)}
-          className={`px-3 py-1.5 font-medium transition ${
-            present ? "bg-green-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          Present
-        </button>
-        <button
-          onClick={() => onChange(false)}
-          className={`px-3 py-1.5 font-medium transition ${
-            !present ? "bg-slate-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          Absent
-        </button>
+        <button onClick={() => onChange(true)} className={`px-3 py-1.5 font-medium transition ${present ? "bg-green-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>Present</button>
+        <button onClick={() => onChange(false)} className={`px-3 py-1.5 font-medium transition ${!present ? "bg-slate-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>Absent</button>
       </div>
     </div>
   );

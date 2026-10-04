@@ -12,7 +12,10 @@ interface Entry {
   id: string;
   date: string;
   salary: number;
+  paid: number;
+  due: number;
   isPartTime: boolean;
+  manual: boolean;
 }
 interface Person {
   name: string;
@@ -280,19 +283,23 @@ export default function PendingPage() {
                       <span className="text-slate-600">
                         {prettyDate(e.date)}
                         {e.isPartTime && (
-                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                            part-time
-                          </span>
+                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">part-time</span>
+                        )}
+                        {e.manual && (
+                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">added</span>
+                        )}
+                        {e.paid > 0 && (
+                          <span className="ml-2 text-xs text-slate-400">paid {fmt(e.paid)} of {fmt(e.salary)}</span>
                         )}
                       </span>
                       <div className="flex items-center gap-3">
-                        <span className="tabular-nums text-slate-800">{fmt(e.salary)}</span>
+                        <span className="tabular-nums font-medium text-amber-600">{fmt(e.due)}</span>
                         <button
-                          onClick={() => settle({ ids: [e.id] }, `${prettyDate(e.date)} (${fmt(e.salary)})`)}
+                          onClick={() => settle({ ids: [e.id] }, `${prettyDate(e.date)} (${fmt(e.due)})`)}
                           disabled={busy}
                           className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                         >
-                          Paid
+                          Pay
                         </button>
                       </div>
                     </div>

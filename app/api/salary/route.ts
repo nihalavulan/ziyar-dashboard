@@ -8,8 +8,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * GET /api/salary?date=YYYY-MM-DD
- * Permanent staff rows (attendance defaults to their most recent prior day)
- * plus any part-time entries added for that day.
+ * Each permanent-staff row carries:
+ *   salary  = primary/fixed salary for the day (staff.salary, or saved snapshot)
+ *   paid    = amount paid that day (defaults to the primary salary)
+ *   present = attendance (defaults to the most recent prior day)
+ * Pending for a day is derived on the client as salary - paid (when present).
  */
 export async function GET(request: Request) {
   try {
@@ -33,20 +36,15 @@ export async function GET(request: Request) {
       .sort({ date: 1 })
       .lean();
 
-    // Latest prior attendance + salary per staff (later dates overwrite earlier).
     const lastPresent = new Map<string, boolean>();
-    const lastSalary = new Map<string, number>();
-    for (const e of priorEntries) {
-      lastPresent.set(String(e.staff), e.present);
-      lastSalary.set(String(e.staff), e.salary ?? 0);
-    }
+    for (const e of priorEntries) lastPresent.set(String(e.staff), e.present);
 
     const todayByStaff = new Map<string, any>();
     const partTime: any[] = [];
     for (const e of todayEntries) {
       if (e.isPartTime) partTime.push(e);
       else if (e.staff) todayByStaff.set(String(e.staff), e);
-      // manual pending entries (staff null, not part-time) live only in Pending
+      // manual pending entries live only in the Pending view
     }
 
     const rows = staff.map((s: any) => {
@@ -58,17 +56,18 @@ export async function GET(request: Request) {
           name: s.name,
           section: s.section,
           salary: t.salary,
+          paid: t.paid,
           present: t.present,
-          pending: t.pending,
         };
       }
+      const present = lastPresent.has(sid) ? lastPresent.get(sid) : true;
       return {
         staffId: sid,
         name: s.name,
         section: s.section,
-        salary: lastSalary.has(sid) ? lastSalary.get(sid) : s.salary,
-        present: lastPresent.has(sid) ? lastPresent.get(sid) : true,
-        pending: false,
+        salary: s.salary,
+        paid: s.salary, // default: pay the full primary salary
+        present,
       };
     });
 
@@ -77,8 +76,8 @@ export async function GET(request: Request) {
       name: e.name,
       section: e.section,
       salary: e.salary,
+      paid: e.paid,
       present: e.present,
-      pending: e.pending,
     }));
 
     return NextResponse.json({ date, rows, partTime: partTimeRows });
@@ -89,7 +88,8 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/salary
- * Body: { date, rows: [{staffId, present, pending}], partTime: [{name, section, salary, present, pending}] }
+ * Saves the day AND any staff name/section/primary-salary edits.
+ * Body: { date, rows: [{staffId, name, section, salary, paid, present}], partTime: [...] }
  */
 export async function POST(request: Request) {
   try {
@@ -107,50 +107,68 @@ export async function POST(request: Request) {
 
     await connectToDatabase();
 
-    const staff = await Staff.find().lean();
-    const staffMap = new Map(staff.map((s: any) => [String(s._id), s]));
+    const staffOps: any[] = [];
+    const entryOps: any[] = [];
 
-    // Permanent staff: upsert one entry per staff for the day (snapshot salary).
-    const ops = rows
-      .filter((r: any) => staffMap.has(String(r.staffId)))
-      .map((r: any) => {
-        const s: any = staffMap.get(String(r.staffId));
-        const present = Boolean(r.present);
-        return {
-          updateOne: {
-            filter: { staff: r.staffId, date },
-            update: {
-              $set: {
-                staff: r.staffId,
-                date,
-                name: s.name,
-                section: s.section,
-                salary: Math.max(0, Number(r.salary ?? s.salary) || 0),
-                present,
-                pending: present ? Boolean(r.pending) : false,
-                isPartTime: false,
-              },
-            },
-            upsert: true,
-          },
-        };
+    for (const r of rows) {
+      if (!r.staffId) continue;
+      const name = (r.name ?? "").trim();
+      const section = (r.section ?? "").trim();
+      const salary = Math.max(0, Number(r.salary) || 0);
+      const present = Boolean(r.present);
+      const paid = present ? Math.max(0, Number(r.paid) || 0) : 0;
+
+      // Persist staff edits (name / section / primary salary).
+      staffOps.push({
+        updateOne: {
+          filter: { _id: r.staffId },
+          update: { $set: { name, section, salary } },
+        },
       });
-    if (ops.length > 0) await SalaryEntry.bulkWrite(ops);
 
-    // Part-time: replace the day's part-time set with what was submitted.
+      // Save the day's entry (snapshot salary + paid).
+      entryOps.push({
+        updateOne: {
+          filter: { staff: r.staffId, date },
+          update: {
+            $set: {
+              staff: r.staffId,
+              date,
+              name,
+              section,
+              salary,
+              paid,
+              present,
+              isPartTime: false,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+
+    if (staffOps.length > 0) await Staff.bulkWrite(staffOps);
+    if (entryOps.length > 0) await SalaryEntry.bulkWrite(entryOps);
+
+    // Part-time: replace the day's set.
     await SalaryEntry.deleteMany({ date, isPartTime: true });
     const ptDocs = partTime
       .filter((p: any) => (p.name ?? "").trim())
-      .map((p: any) => ({
-        staff: null,
-        date,
-        name: (p.name ?? "").trim(),
-        section: (p.section ?? "").trim(),
-        salary: Math.max(0, Number(p.salary) || 0),
-        present: p.present === undefined ? true : Boolean(p.present),
-        pending: Boolean(p.pending),
-        isPartTime: true,
-      }));
+      .map((p: any) => {
+        const present = p.present === undefined ? true : Boolean(p.present);
+        const salary = Math.max(0, Number(p.salary) || 0);
+        return {
+          staff: null,
+          date,
+          name: (p.name ?? "").trim(),
+          section: (p.section ?? "").trim(),
+          salary,
+          paid: present ? Math.max(0, Number(p.paid ?? salary) || 0) : 0,
+          present,
+          isPartTime: true,
+          manual: false,
+        };
+      });
     if (ptDocs.length > 0) await SalaryEntry.insertMany(ptDocs);
 
     return NextResponse.json({ ok: true });

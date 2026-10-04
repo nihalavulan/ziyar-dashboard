@@ -40,9 +40,9 @@ export async function POST(request: Request) {
       date,
       name,
       section,
-      salary,
+      salary, // owed
+      paid: 0, // nothing paid yet -> fully pending
       present: true,
-      pending: true,
       isPartTime: false,
       manual: true,
     });

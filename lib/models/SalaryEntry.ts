@@ -13,8 +13,12 @@ const SalaryEntrySchema = new Schema(
     // Denormalised so pending views + part-timers work without a join.
     name: { type: String, default: "" },
     section: { type: String, default: "" },
+    // Primary/fixed salary owed for the day (snapshot of staff.salary at save time).
     salary: { type: Number, default: 0 },
+    // Amount actually paid that day (defaults to salary). Shortfall = salary - paid = pending.
+    paid: { type: Number, default: 0 },
     present: { type: Boolean, default: true },
+    // Legacy flag, no longer used for logic (pending is derived from salary - paid).
     pending: { type: Boolean, default: false },
     isPartTime: { type: Boolean, default: false },
     // Manually-added pending (e.g. legacy amounts owed before using the app);
