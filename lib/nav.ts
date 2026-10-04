@@ -9,4 +9,5 @@ export const navItems: NavItem[] = [
   { label: "Daily entry", href: "/dashboard/daily-entry", icon: "📝" },
   { label: "Staff & Salary", href: "/dashboard/staff", icon: "👥" },
   { label: "Fixed Expenses", href: "/dashboard/fixed-expenses", icon: "🏦" },
+  { label: "Daily P&L", href: "/dashboard/pnl", icon: "📈" },
 ];
