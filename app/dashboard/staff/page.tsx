@@ -393,7 +393,8 @@ export default function StaffSalaryPage() {
                   <td className="px-4 py-2 text-right">
                     <input type="number" inputMode="decimal" min={0} value={r.salary === 0 ? "" : r.salary}
                       onChange={(e) => setSalary(r.staffId, e.target.value)} placeholder="0"
-                      className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+                      title="Primary salary — hover and click to change"
+                      className="w-24 rounded-lg border border-transparent px-2 py-1.5 text-right tabular-nums text-slate-500 outline-none hover:border-slate-200 focus:border-brand-500 focus:text-slate-900 focus:ring-2 focus:ring-brand-200" />
                   </td>
                   <td className="px-4 py-2 text-right">
                     <input type="number" inputMode="decimal" min={0} value={r.paid === 0 ? "" : r.paid} disabled={!r.present}
