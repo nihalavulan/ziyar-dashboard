@@ -45,6 +45,8 @@ export async function GET(request: Request) {
     }
     const month = date.slice(0, 7);
     const start = shiftDate(date, -30); // window covering month-to-date + last 7
+    const days7: string[] = [];
+    for (let i = 6; i >= 0; i--) days7.push(shiftDate(date, -i));
 
     await connectToDatabase();
 
@@ -55,18 +57,38 @@ export async function GET(request: Request) {
       0
     );
 
-    // Supplier outstanding (current).
-    const suppliers = await Supplier.find().lean();
+    // Supplier analytics (outstanding, purchases vs paid, trend).
+    const suppliers = await Supplier.find().sort({ order: 1, name: 1 }).lean();
     const supEntries = await DailyEntry.find({ date: { $lte: date } }).lean();
     const supNet = new Map<string, number>();
-    for (const e of supEntries) {
+    let allPurchase = 0, allPaid = 0, monthPurchase = 0, monthPaid = 0, todayPurchase = 0, todayPaid = 0, totalOpening = 0;
+    const sup7 = days7.map((d) => ({ date: d, purchase: 0, paid: 0 }));
+    const sup7Index = new Map(sup7.map((r, i) => [r.date, i]));
+    for (const e of supEntries as any[]) {
       const sid = String(e.supplier);
-      supNet.set(sid, (supNet.get(sid) ?? 0) + (e.purchase ?? 0) - (e.paid ?? 0));
+      const p = e.purchase ?? 0;
+      const pd = e.paid ?? 0;
+      supNet.set(sid, (supNet.get(sid) ?? 0) + p - pd);
+      allPurchase += p;
+      allPaid += pd;
+      if (e.date.startsWith(month)) { monthPurchase += p; monthPaid += pd; }
+      if (e.date === date) { todayPurchase += p; todayPaid += pd; }
+      const idx = sup7Index.get(e.date);
+      if (idx !== undefined) { sup7[idx].purchase += p; sup7[idx].paid += pd; }
     }
-    let supplierPending = 0;
-    for (const s of suppliers as any[]) {
-      supplierPending += Math.max(0, (s.openingBalance ?? 0) + (supNet.get(String(s._id)) ?? 0));
-    }
+    const supplierBalances = (suppliers as any[]).map((s) => {
+      totalOpening += s.openingBalance ?? 0;
+      return { name: s.name, balance: Math.max(0, (s.openingBalance ?? 0) + (supNet.get(String(s._id)) ?? 0)) };
+    });
+    const supplierPending = supplierBalances.reduce((a, b) => a + b.balance, 0);
+    const activeSuppliers = supplierBalances.filter((s) => s.balance > 0).length;
+    const topSuppliers = [...supplierBalances]
+      .filter((s) => s.balance > 0)
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 5);
+    const obligations = totalOpening + allPurchase;
+    const paymentRatio = obligations > 0 ? allPaid / obligations : 0;
+    const monthCoverage = monthPurchase > 0 ? monthPaid / monthPurchase : null;
 
     // Salary pending (all-time shortfall).
     const pend = await SalaryEntry.find({
@@ -138,6 +160,18 @@ export async function GET(request: Request) {
       supplierPending,
       salaryPending,
       supplierCount: suppliers.length,
+      // supplier analytics
+      activeSuppliers,
+      allPurchase,
+      allPaid,
+      monthPurchase,
+      monthPaid,
+      todayPurchase,
+      todayPaid,
+      paymentRatio,
+      monthCoverage,
+      topSuppliers,
+      supplier7: sup7,
       today,
       month: {
         sales: monthSales,

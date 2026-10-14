@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RadialGauge, Bar } from "@/components/charts";
 
 interface DayFig {
   date: string;
@@ -17,6 +18,17 @@ interface Overview {
   supplierPending: number;
   salaryPending: number;
   supplierCount: number;
+  activeSuppliers: number;
+  allPurchase: number;
+  allPaid: number;
+  monthPurchase: number;
+  monthPaid: number;
+  todayPurchase: number;
+  todayPaid: number;
+  paymentRatio: number;
+  monthCoverage: number | null;
+  topSuppliers: { name: string; balance: number }[];
+  supplier7: { date: string; purchase: number; paid: number }[];
   today: DayFig;
   month: {
     sales: number;
@@ -48,6 +60,7 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [tab, setTab] = useState<"business" | "suppliers">("business");
 
   useEffect(() => {
     setMounted(true);
@@ -74,6 +87,8 @@ export default function OverviewPage() {
   const t = d.today;
   const mon = mounted ? monthName() : "";
   const maxAbs = Math.max(1, ...d.last7.map((x) => Math.abs(x.profit)));
+  const topMax = Math.max(1, ...d.topSuppliers.map((s) => s.balance));
+  const supMax = Math.max(1, ...d.supplier7.flatMap((r) => [r.purchase, r.paid]));
 
   return (
     <div className="space-y-6">
@@ -84,6 +99,22 @@ export default function OverviewPage() {
         </p>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {([["business", "Business"], ["suppliers", "Suppliers"]] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+              tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "business" && (<>
       {/* Today's P&L hero */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -168,6 +199,81 @@ export default function OverviewPage() {
         Profit = Sales − Food cost − Staff food − Fixed expenses (per day) − Salary
         paid. Sales count Direct in full and Swiggy/Zomato net of 25% commission.
       </p>
+      </>)}
+
+      {tab === "suppliers" && (<>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Stat label="Owed to suppliers" value={fmt(d.supplierPending)} valueClass="text-amber-700" />
+          <Stat label="Active suppliers" value={`${d.activeSuppliers}`} hint={`of ${d.supplierCount} total`} />
+          <Stat label={`Purchases · ${mon}`} value={fmt(d.monthPurchase)} />
+          <Stat label={`Paid · ${mon}`} value={fmt(d.monthPaid)} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Payment ratio */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-semibold text-slate-800">Payment Ratio</h3></div>
+            <div className="flex flex-col items-center gap-4 p-5">
+              <RadialGauge value={d.paymentRatio} centerTop={`${Math.round(d.paymentRatio * 100)}%`} centerBottom="settled" />
+              <div className="w-full space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-brand-600" />Paid (all time)</span>
+                  <span className="tabular-nums font-medium">{fmt(d.allPaid)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-slate-200" />Pending</span>
+                  <span className="tabular-nums font-medium">{fmt(d.supplierPending)}</span>
+                </div>
+                {d.monthCoverage !== null && (
+                  <p className="pt-1 text-xs text-slate-400">{mon}: paid {Math.round(d.monthCoverage * 100)}% of purchases.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Top pending suppliers */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-semibold text-slate-800">Top Pending Suppliers</h3></div>
+            <div className="p-5">
+              {d.topSuppliers.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">No outstanding balances.</p>
+              ) : (
+                <div className="space-y-4">
+                  {d.topSuppliers.map((s) => <Bar key={s.name} label={s.name} value={s.balance} max={topMax} format={fmt} />)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Purchases vs paid (7-day) */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-semibold text-slate-800">Last 7 Days</h3></div>
+            <div className="p-5">
+              <div className="flex h-44 items-end justify-between gap-2 pt-2">
+                {d.supplier7.map((x) => (
+                  <div key={x.date} className="flex flex-1 flex-col items-center gap-1">
+                    <div className="flex h-32 items-end gap-0.5">
+                      <div className="w-2.5 rounded-t bg-brand-600" style={{ height: `${(x.purchase / supMax) * 100}%` }} title={`Purchase ${fmt(x.purchase)}`} />
+                      <div className="w-2.5 rounded-t bg-brand-300" style={{ height: `${(x.paid / supMax) * 100}%` }} title={`Paid ${fmt(x.paid)}`} />
+                    </div>
+                    <span className="text-[10px] text-slate-400">{x.date.slice(8, 10)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-center gap-4 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-600" /> Purchases</span>
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-300" /> Paid</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <Stat label="Purchases today" value={fmt(d.todayPurchase)} />
+          <Stat label="Paid today" value={fmt(d.todayPaid)} />
+          <Stat label="Purchased (all time)" value={fmt(d.allPurchase)} />
+        </div>
+      </>)}
     </div>
   );
 }
