@@ -7,9 +7,12 @@ import mongoose, { Schema, InferSchemaType } from "mongoose";
 const DailyPnlSchema = new Schema(
   {
     date: { type: String, required: true, unique: true }, // YYYY-MM-DD
-    // Food cost is derived from the food table (prepared × rate); sales and
-    // staff food are entered manually.
-    totalSales: { type: Number, default: 0 }, // day's revenue (manual)
+    // Food cost is derived from the food table (prepared × rate). Sales come
+    // from three sources; Swiggy/Zomato are reduced by commission to get net
+    // revenue. Total sales (revenue) is derived from these three.
+    directSales: { type: Number, default: 0 }, // counter / direct (manual)
+    swiggySales: { type: Number, default: 0 }, // gross Swiggy (manual)
+    zomatoSales: { type: Number, default: 0 }, // gross Zomato (manual)
     staffFood: { type: Number, default: 0 },
   },
   { timestamps: true }

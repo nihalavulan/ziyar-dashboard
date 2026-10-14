@@ -9,6 +9,8 @@ import SalaryEntry from "@/lib/models/SalaryEntry";
 export const dynamic = "force-dynamic";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FX_DIVISOR: Record<string, number> = { day: 1, month: 30, year: 360 };
+// Swiggy/Zomato take ~25% commission, so net revenue is 75% of gross.
+const AGGREGATOR_COMMISSION = 0.25;
 
 /**
  * GET /api/pnl?date=YYYY-MM-DD
@@ -65,8 +67,15 @@ export async function GET(request: Request) {
     });
 
     const pnl: any = (await DailyPnl.findOne({ date }).lean()) ?? {};
-    const totalSales = pnl.totalSales ?? 0; // day's revenue (manual)
+    const directSales = pnl.directSales ?? 0;
+    const swiggySales = pnl.swiggySales ?? 0;
+    const zomatoSales = pnl.zomatoSales ?? 0;
     const staffFood = pnl.staffFood ?? 0;
+    // Net revenue: direct in full, Swiggy/Zomato after commission.
+    const totalSales =
+      directSales +
+      swiggySales * (1 - AGGREGATOR_COMMISSION) +
+      zomatoSales * (1 - AGGREGATOR_COMMISSION);
 
     // Fixed expenses -> per-day share.
     const fx = await FixedExpense.find().lean();
@@ -85,6 +94,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
       date,
       foodRows,
+      directSales,
+      swiggySales,
+      zomatoSales,
+      commission: AGGREGATOR_COMMISSION,
       totalSales,
       staffFood,
       foodCost,
@@ -155,7 +168,9 @@ export async function POST(request: Request) {
       {
         $set: {
           date,
-          totalSales: Math.max(0, Number(body.totalSales) || 0),
+          directSales: Math.max(0, Number(body.directSales) || 0),
+          swiggySales: Math.max(0, Number(body.swiggySales) || 0),
+          zomatoSales: Math.max(0, Number(body.zomatoSales) || 0),
           staffFood: Math.max(0, Number(body.staffFood) || 0),
         },
       },

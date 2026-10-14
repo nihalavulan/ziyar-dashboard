@@ -38,6 +38,8 @@ function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 const num = (v: string) => Math.max(0, Number(v) || 0);
+// Swiggy/Zomato commission — net revenue is 75% of gross.
+const COMMISSION = 0.25;
 
 export default function PnlPage() {
   const [date, setDate] = useState(todayStr());
@@ -45,7 +47,9 @@ export default function PnlPage() {
   useEffect(() => setMounted(true), []);
 
   const [rows, setRows] = useState<FoodRow[]>([]);
-  const [totalSales, setTotalSales] = useState(0); // day's revenue (manual)
+  const [directSales, setDirectSales] = useState(0);
+  const [swiggySales, setSwiggySales] = useState(0);
+  const [zomatoSales, setZomatoSales] = useState(0);
   const [staffFood, setStaffFood] = useState(0);
   const [fixedDaily, setFixedDaily] = useState(0);
   const [salaryPaid, setSalaryPaid] = useState(0);
@@ -76,7 +80,9 @@ export default function PnlPage() {
           rate: r.rate,
         }))
       );
-      setTotalSales(data.totalSales);
+      setDirectSales(data.directSales);
+      setSwiggySales(data.swiggySales);
+      setZomatoSales(data.zomatoSales);
       setStaffFood(data.staffFood);
       setFixedDaily(data.fixedDaily);
       setSalaryPaid(data.salaryPaid);
@@ -104,7 +110,7 @@ export default function PnlPage() {
       const res = await fetch("/api/pnl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, foodRows: rows, totalSales, staffFood }),
+        body: JSON.stringify({ date, foodRows: rows, directSales, swiggySales, zomatoSales, staffFood }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save.");
@@ -151,6 +157,10 @@ export default function PnlPage() {
 
   // Food cost = sum of (prepared × rate): the cost is incurred once prepared.
   const foodCost = useMemo(() => rows.reduce((a, r) => a + r.prepared * r.rate, 0), [rows]);
+  // Total revenue: direct in full + Swiggy/Zomato net of commission.
+  const swiggyNet = swiggySales * (1 - COMMISSION);
+  const zomatoNet = zomatoSales * (1 - COMMISSION);
+  const totalSales = directSales + swiggyNet + zomatoNet;
   const basicExpenses = staffFood + fixedDaily + salaryPaid;
   const profit = totalSales - foodCost - basicExpenses;
 
@@ -271,20 +281,43 @@ export default function PnlPage() {
         </table>
       </div>
 
-      {/* Daily inputs */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="mb-1 block text-xs font-medium text-slate-600">Total sales (today&apos;s revenue)</label>
-          <input type="number" inputMode="decimal" min={0} value={totalSales === 0 ? "" : totalSales}
-            onChange={(e) => { setTotalSales(num(e.target.value)); setDirty(true); }} placeholder="0"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+      {/* Sales */}
+      <div className="rounded-2xl border-2 border-brand-600 bg-brand-50/30 p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-800">Sales</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Direct / counter sales</label>
+            <input type="number" inputMode="decimal" min={0} value={directSales === 0 ? "" : directSales}
+              onChange={(e) => { setDirectSales(num(e.target.value)); setDirty(true); }} placeholder="0"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Swiggy sales</label>
+            <input type="number" inputMode="decimal" min={0} value={swiggySales === 0 ? "" : swiggySales}
+              onChange={(e) => { setSwiggySales(num(e.target.value)); setDirty(true); }} placeholder="0"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+            <p className="mt-1 text-xs text-slate-400">−25% commission → net {fmt(swiggyNet)}</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Zomato sales</label>
+            <input type="number" inputMode="decimal" min={0} value={zomatoSales === 0 ? "" : zomatoSales}
+              onChange={(e) => { setZomatoSales(num(e.target.value)); setDirty(true); }} placeholder="0"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+            <p className="mt-1 text-xs text-slate-400">−25% commission → net {fmt(zomatoNet)}</p>
+          </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="mb-1 block text-xs font-medium text-slate-600">Staff food expense (today)</label>
-          <input type="number" inputMode="decimal" min={0} value={staffFood === 0 ? "" : staffFood}
-            onChange={(e) => { setStaffFood(num(e.target.value)); setDirty(true); }} placeholder="0"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-brand-600 px-4 py-3 text-white">
+          <span className="text-sm font-medium">Total sales (revenue of the day)</span>
+          <span className="text-2xl font-bold tabular-nums">{fmt(totalSales)}</span>
         </div>
+      </div>
+
+      {/* Staff food */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:max-w-sm">
+        <label className="mb-1 block text-xs font-medium text-slate-600">Staff food expense (today)</label>
+        <input type="number" inputMode="decimal" min={0} value={staffFood === 0 ? "" : staffFood}
+          onChange={(e) => { setStaffFood(num(e.target.value)); setDirty(true); }} placeholder="0"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
       </div>
 
       {/* P&L box */}
