@@ -155,8 +155,22 @@ export default function PnlPage() {
     }
   }
 
-  // Food cost = sum of (prepared × rate): the cost is incurred once prepared.
-  const foodCost = useMemo(() => rows.reduce((a, r) => a + r.prepared * r.rate, 0), [rows]);
+  // Column totals (for the footer + trend tracking). Food cost = Σ prepared×rate.
+  const foodTotals = useMemo(
+    () =>
+      rows.reduce(
+        (a, r) => ({
+          prepared: a.prepared + r.prepared,
+          sold: a.sold + r.sold,
+          damage: a.damage + r.damage,
+          balance: a.balance + (r.prepared - r.sold - r.damage),
+          cost: a.cost + r.prepared * r.rate,
+        }),
+        { prepared: 0, sold: 0, damage: 0, balance: 0, cost: 0 }
+      ),
+    [rows]
+  );
+  const foodCost = foodTotals.cost;
   // Total revenue: direct in full + Swiggy/Zomato net of commission.
   const swiggyNet = swiggySales * (1 - COMMISSION);
   const zomatoNet = zomatoSales * (1 - COMMISSION);
@@ -272,13 +286,26 @@ export default function PnlPage() {
           {rows.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-800">
-                <td className="px-4 py-3" colSpan={6}>Total food cost</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodCost)}</td>
+                <td className="px-4 py-3">Total</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodTotals.prepared)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodTotals.sold)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodTotals.balance)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodTotals.damage)}</td>
+                <td className="px-4 py-3 text-right text-xs font-normal text-slate-400">food cost →</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodTotals.cost)}</td>
                 <td></td>
               </tr>
             </tfoot>
           )}
         </table>
+      </div>
+
+      {/* Staff food */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:max-w-sm">
+        <label className="mb-1 block text-xs font-medium text-slate-600">Staff food expense (today)</label>
+        <input type="number" inputMode="decimal" min={0} value={staffFood === 0 ? "" : staffFood}
+          onChange={(e) => { setStaffFood(num(e.target.value)); setDirty(true); }} placeholder="0"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
       </div>
 
       {/* Sales */}
@@ -310,14 +337,6 @@ export default function PnlPage() {
           <span className="text-sm font-medium">Total sales (revenue of the day)</span>
           <span className="text-2xl font-bold tabular-nums">{fmt(totalSales)}</span>
         </div>
-      </div>
-
-      {/* Staff food */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:max-w-sm">
-        <label className="mb-1 block text-xs font-medium text-slate-600">Staff food expense (today)</label>
-        <input type="number" inputMode="decimal" min={0} value={staffFood === 0 ? "" : staffFood}
-          onChange={(e) => { setStaffFood(num(e.target.value)); setDirty(true); }} placeholder="0"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
       </div>
 
       {/* P&L box */}
