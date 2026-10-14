@@ -7,7 +7,9 @@ import mongoose, { Schema, InferSchemaType } from "mongoose";
 const DailyPnlSchema = new Schema(
   {
     date: { type: String, required: true, unique: true }, // YYYY-MM-DD
-    totalSales: { type: Number, default: 0 },
+    // Total sales is derived from the food table (sold × rate); only the cost
+    // figures are entered manually.
+    foodCost: { type: Number, default: 0 }, // cost of preparation (manual)
     staffFood: { type: Number, default: 0 },
   },
   { timestamps: true }

@@ -45,7 +45,7 @@ export default function PnlPage() {
   useEffect(() => setMounted(true), []);
 
   const [rows, setRows] = useState<FoodRow[]>([]);
-  const [totalSales, setTotalSales] = useState(0);
+  const [foodCost, setFoodCost] = useState(0); // cost of preparation (manual)
   const [staffFood, setStaffFood] = useState(0);
   const [fixedDaily, setFixedDaily] = useState(0);
   const [salaryPaid, setSalaryPaid] = useState(0);
@@ -76,7 +76,7 @@ export default function PnlPage() {
           rate: r.rate,
         }))
       );
-      setTotalSales(data.totalSales);
+      setFoodCost(data.foodCost);
       setStaffFood(data.staffFood);
       setFixedDaily(data.fixedDaily);
       setSalaryPaid(data.salaryPaid);
@@ -104,7 +104,7 @@ export default function PnlPage() {
       const res = await fetch("/api/pnl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, foodRows: rows, totalSales, staffFood }),
+        body: JSON.stringify({ date, foodRows: rows, foodCost, staffFood }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save.");
@@ -149,7 +149,8 @@ export default function PnlPage() {
     }
   }
 
-  const foodCost = useMemo(() => rows.reduce((a, r) => a + r.sold * r.rate, 0), [rows]);
+  // Total sales = sum of (sold × rate) across the food table.
+  const totalSales = useMemo(() => rows.reduce((a, r) => a + r.sold * r.rate, 0), [rows]);
   const basicExpenses = staffFood + fixedDaily + salaryPaid;
   const profit = totalSales - foodCost - basicExpenses;
 
@@ -241,7 +242,7 @@ export default function PnlPage() {
                 return (
                   <tr key={r.foodItemId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                     <td className="px-4 py-2">
-                      <input value={r.name} onChange={(e) => setRow(r.foodItemId, { name: e.target.value })} title="Click to edit"
+                      <input value={r.name} onChange={(e) => setRow(r.foodItemId, { name: e.target.value })} title="Click to edit" tabIndex={-1}
                         className="w-32 rounded-lg border border-transparent px-2 py-1.5 font-medium text-slate-800 outline-none hover:border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
                     </td>
                     <td className="px-4 py-2 text-right">{numInput("prepared")}</td>
@@ -251,7 +252,7 @@ export default function PnlPage() {
                     <td className="px-4 py-2 text-right">{numInput("rate")}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-semibold text-slate-900">{fmt(total)}</td>
                     <td className="px-2 py-2 text-right">
-                      <button onClick={() => removeItem(r.foodItemId, r.name)} className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500" title="Delete item">✕</button>
+                      <button onClick={() => removeItem(r.foodItemId, r.name)} tabIndex={-1} className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500" title="Delete item">✕</button>
                     </td>
                   </tr>
                 );
@@ -261,8 +262,8 @@ export default function PnlPage() {
           {rows.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-800">
-                <td className="px-4 py-3" colSpan={6}>Total food cost</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt(foodCost)}</td>
+                <td className="px-4 py-3" colSpan={6}>Total sales</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt(totalSales)}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -273,9 +274,9 @@ export default function PnlPage() {
       {/* Daily inputs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="mb-1 block text-xs font-medium text-slate-600">Total sales (today&apos;s revenue)</label>
-          <input type="number" inputMode="decimal" min={0} value={totalSales === 0 ? "" : totalSales}
-            onChange={(e) => { setTotalSales(num(e.target.value)); setDirty(true); }} placeholder="0"
+          <label className="mb-1 block text-xs font-medium text-slate-600">Food cost (cost of preparation)</label>
+          <input type="number" inputMode="decimal" min={0} value={foodCost === 0 ? "" : foodCost}
+            onChange={(e) => { setFoodCost(num(e.target.value)); setDirty(true); }} placeholder="0"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200" />
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -317,9 +318,9 @@ export default function PnlPage() {
       </div>
 
       <p className="px-1 text-xs text-slate-400">
-        Balance = Prepared − Sold − Damage. Total = Sold × Rate (food cost). Fixed
-        expenses and salary are pulled automatically from those sections. Profit =
-        Sales − Food cost − Basic expenses.
+        Balance = Prepared − Sold − Damage. Total = Sold × Rate (sales), summed as
+        Total Sales. Fixed expenses and salary are pulled automatically from those
+        sections. Profit = Sales − Food cost − Basic expenses.
       </p>
     </div>
   );

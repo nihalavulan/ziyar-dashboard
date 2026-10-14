@@ -41,7 +41,8 @@ export async function GET(request: Request) {
     const todayByItem = new Map<string, any>();
     for (const e of todayEntries) todayByItem.set(String(e.foodItem), e);
 
-    let foodCost = 0;
+    // Total sales = sum of (sold × rate) across the food table.
+    let totalSales = 0;
     const foodRows = items.map((it: any) => {
       const id = String(it._id);
       const t = todayByItem.get(id);
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
       const damage = t ? t.damage : 0;
       const rate = t ? t.rate : lastRate.has(id) ? lastRate.get(id)! : it.rate;
       const total = sold * rate;
-      foodCost += total;
+      totalSales += total;
       return {
         foodItemId: id,
         name: it.name,
@@ -64,7 +65,7 @@ export async function GET(request: Request) {
     });
 
     const pnl: any = (await DailyPnl.findOne({ date }).lean()) ?? {};
-    const totalSales = pnl.totalSales ?? 0;
+    const foodCost = pnl.foodCost ?? 0; // cost of preparation (manual)
     const staffFood = pnl.staffFood ?? 0;
 
     // Fixed expenses -> per-day share.
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
       {
         $set: {
           date,
-          totalSales: Math.max(0, Number(body.totalSales) || 0),
+          foodCost: Math.max(0, Number(body.foodCost) || 0),
           staffFood: Math.max(0, Number(body.staffFood) || 0),
         },
       },
