@@ -49,3 +49,45 @@ export function verifyCredentials(email: string, password: string) {
 
 export const SESSION_COOKIE = COOKIE_NAME;
 export const SESSION_MAX_AGE = MAX_AGE;
+
+// ---------------------------------------------------------------------------
+// Hidden "/wn" dashboard — a second, separate lock on top of the main login.
+// ---------------------------------------------------------------------------
+
+const WN_COOKIE_NAME = "ziyar_wn";
+const WN_MAX_AGE = 60 * 60 * 2; // 2 hours
+
+/** Create a signed token that unlocks the hidden /wn dashboard. */
+export async function createWnToken(username: string) {
+  return new SignJWT({ username, scope: "wn" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${WN_MAX_AGE}s`)
+    .sign(getSecretKey());
+}
+
+/** Verify a /wn token; a normal session token is rejected (scope check). */
+export async function verifyWnToken(token: string | undefined) {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, getSecretKey());
+    if (payload.scope !== "wn") return null;
+    return { username: payload.username as string };
+  } catch {
+    return null;
+  }
+}
+
+/** Check /wn credentials against env values. */
+export function verifyWnCredentials(username: string, password: string) {
+  const wnUsername = process.env.WN_USERNAME ?? "";
+  const wnPassword = process.env.WN_PASSWORD ?? "";
+  if (!wnUsername || !wnPassword) return false;
+  return (
+    username.trim().toLowerCase() === wnUsername.trim().toLowerCase() &&
+    password === wnPassword
+  );
+}
+
+export const WN_COOKIE = WN_COOKIE_NAME;
+export const WN_MAX_AGE_SECONDS = WN_MAX_AGE;
