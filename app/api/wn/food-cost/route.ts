@@ -5,17 +5,17 @@ import WnFoodCost from "@/lib/models/WnFoodCost";
 export const dynamic = "force-dynamic";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function toSections(doc: any): Record<string, any[]> {
-  const out: Record<string, any[]> = {};
-  (doc?.sections ?? []).forEach((s: any) => {
-    out[s.key] = (s.rows ?? []).map((r: any) => ({
+function toSections(doc: any) {
+  return (doc?.sections ?? []).map((s: any) => ({
+    key: s.key,
+    label: s.label ?? "",
+    rows: (s.rows ?? []).map((r: any) => ({
       name: r.name ?? "",
       qty: r.qty ?? 0,
       unit: r.unit ?? "kg",
       rate: r.rate ?? 0,
-    }));
-  });
-  return out;
+    })),
+  }));
 }
 
 /**
@@ -47,16 +47,23 @@ export async function GET(request: Request) {
       );
     }
     const doc = await WnFoodCost.findOne({ date }).lean();
-    return NextResponse.json({ date, saved: Boolean(doc), sections: toSections(doc) });
+    return NextResponse.json({
+      date,
+      saved: Boolean(doc),
+      sections: toSections(doc),
+    });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * POST /api/wn/food-cost
- * Body: { date, sections: { [key]: [{ name, qty, unit, rate }] } }
- * Replaces that day's sheet. Rows without a name are dropped.
+ * Body: { date, sections: [{ key, label, rows: [{ name, qty, unit, rate }] }] }
+ * Replaces that day's sheet. Rows without a name, and dishes with no rows, are dropped.
  */
 export async function POST(request: Request) {
   try {
@@ -69,22 +76,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const input = body.sections && typeof body.sections === "object" ? body.sections : {};
-    const sections = Object.entries(input).map(([key, rows]) => ({
-      key,
-      rows: (Array.isArray(rows) ? rows : [])
-        .filter((r: any) => (r?.name ?? "").trim())
-        .map((r: any) => ({
-          name: String(r.name).trim(),
-          qty: Math.max(0, Number(r.qty) || 0),
-          unit: String(r.unit ?? "").trim() || "kg",
-          rate: Math.max(0, Number(r.rate) || 0),
-        })),
-    }));
+    const input: any[] = Array.isArray(body.sections) ? body.sections : [];
+    const sections = input
+      .filter((s) => typeof s?.key === "string" && s.key)
+      .map((s) => ({
+        key: s.key as string,
+        label: typeof s.label === "string" ? s.label.trim() : "",
+        rows: (Array.isArray(s.rows) ? s.rows : [])
+          .filter((r: any) => (r?.name ?? "").trim())
+          .map((r: any) => ({
+            name: String(r.name).trim(),
+            qty: Math.max(0, Number(r.qty) || 0),
+            unit: String(r.unit ?? "").trim() || "kg",
+            rate: Math.max(0, Number(r.rate) || 0),
+          })),
+      }))
+      .filter((s) => s.rows.length > 0);
 
     await connectToDatabase();
 
-    if (sections.every((s) => s.rows.length === 0)) {
+    if (sections.length === 0) {
       await WnFoodCost.deleteOne({ date });
     } else {
       await WnFoodCost.updateOne(
@@ -95,6 +106,9 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 }
+    );
   }
 }

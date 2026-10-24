@@ -2,7 +2,8 @@ import mongoose, { Schema, InferSchemaType } from "mongoose";
 
 /**
  * Hidden /wn dashboard: one food-cost sheet per day.
- * Each section (Mandhi Rice, Madhooth, Alfahm, …) holds its ingredient rows;
+ * Each section is one dish (key = WnFoodItem id, label = its name that day)
+ * and holds its ingredient rows;
  * a row's cost is qty × rate (derived, not stored).
  */
 const IngredientSchema = new Schema(
@@ -18,6 +19,7 @@ const IngredientSchema = new Schema(
 const SectionSchema = new Schema(
   {
     key: { type: String, required: true },
+    label: { type: String, default: "" },
     rows: { type: [IngredientSchema], default: [] },
   },
   { _id: false }

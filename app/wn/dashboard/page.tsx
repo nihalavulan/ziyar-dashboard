@@ -4,7 +4,7 @@ const TILES = [
   {
     href: "/wn/dashboard/food-cost",
     title: "Food Cost",
-    description: "Daily ingredient costs for Mandhi Rice, Madhooth and Alfahm.",
+    description: "Daily ingredient costs for each dish.",
   },
   {
     href: "/wn/dashboard/sop",
