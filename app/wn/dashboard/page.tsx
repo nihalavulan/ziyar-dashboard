@@ -11,6 +11,11 @@ const TILES = [
     title: "SOP Creator",
     description: "Daily tasks, responsibilities and KPIs for each team member.",
   },
+  {
+    href: "/wn/dashboard/kitchen",
+    title: "Kitchen Staff",
+    description: "Private daily-usage links for chefs and helpers, and their usage report.",
+  },
 ];
 
 export default function WnDashboardPage() {

@@ -28,6 +28,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Kitchen staff pages: the private key in the link is the login.
+  const isKitchenArea = pathname.startsWith("/k/") || pathname.startsWith("/api/k/");
+  if (isKitchenArea) return NextResponse.next();
+
   // Not signed in and trying to reach a protected page -> go to login
   if (!session && !isLoginPage && !isWnArea) {
     const url = request.nextUrl.clone();

@@ -7,6 +7,7 @@ const NAV = [
   { href: "/wn/dashboard", label: "Home" },
   { href: "/wn/dashboard/food-cost", label: "Food Cost" },
   { href: "/wn/dashboard/sop", label: "SOP Creator" },
+  { href: "/wn/dashboard/kitchen", label: "Kitchen Staff" },
 ];
 
 export default function WnShell({
@@ -59,7 +60,7 @@ export default function WnShell({
               key={item.href}
               href={item.href}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
-                pathname === item.href
+                (item.href === "/wn/dashboard" ? pathname === item.href : pathname.startsWith(item.href))
                   ? "bg-white/10 font-medium text-white"
                   : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
               }`}
