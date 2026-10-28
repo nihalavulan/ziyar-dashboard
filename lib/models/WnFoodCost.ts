@@ -29,6 +29,9 @@ const WnFoodCostSchema = new Schema(
   {
     date: { type: String, required: true, unique: true }, // YYYY-MM-DD
     sections: { type: [SectionSchema], default: [] },
+    // true = copied forward automatically, not yet saved by hand.
+    auto: { type: Boolean, default: false },
+    copiedFrom: { type: String, default: "" }, // the day it was copied from
   },
   { timestamps: true }
 );

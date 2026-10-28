@@ -61,6 +61,8 @@ export default function WnFoodCostPage() {
   // Set when an unsaved day was filled from the last saved day (date it came from).
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
   const [copiedLabels, setCopiedLabels] = useState<Record<string, string>>({});
+  // Set when this day was filled in automatically from an earlier day (already saved).
+  const [autoFrom, setAutoFrom] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const [adding, setAdding] = useState(false);
@@ -120,6 +122,7 @@ export default function WnFoodCostPage() {
           setSavedLabels({});
           setCopiedLabels(copied.labels);
           setCopiedFrom(prev.date);
+          setAutoFrom(null);
           setDirty(false);
           return;
         }
@@ -130,6 +133,7 @@ export default function WnFoodCostPage() {
       setSavedLabels(loaded.labels);
       setCopiedLabels({});
       setCopiedFrom(null);
+      setAutoFrom(data.auto ? data.copiedFrom : null);
       setDirty(false);
     } catch (e) {
       setError((e as Error).message);
@@ -248,7 +252,12 @@ export default function WnFoodCostPage() {
       setDirty(false);
       setCopiedFrom(null);
       setCopiedLabels({});
-      setMessage("Saved.");
+      setAutoFrom(null);
+      setMessage(
+        data.pushed
+          ? `Saved. Also updated the next ${data.pushed} auto-copied day${data.pushed === 1 ? "" : "s"}.`
+          : "Saved."
+      );
       // Match what's stored: blank rows dropped, labels remembered for this day.
       const labels: Record<string, string> = {};
       const next: Sheet = {};
@@ -326,6 +335,12 @@ export default function WnFoodCostPage() {
           )}
         </div>
       </div>
+
+      {autoFrom && !copiedFrom && !loading && (
+        <div className="rounded-2xl border border-brand-500/40 bg-brand-600/15 px-4 py-3 text-sm text-slate-300">
+          <span className="font-semibold text-white">Copied automatically</span> from {prettyDate(autoFrom)}. If anything was different today, change it and click Save day.
+        </div>
+      )}
 
       {copiedFrom && !loading && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
