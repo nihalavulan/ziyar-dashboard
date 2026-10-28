@@ -58,6 +58,9 @@ export default function WnFoodCostPage() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
+  // Set when an unsaved day was filled from the last saved day (date it came from).
+  const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  const [copiedLabels, setCopiedLabels] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
   const [adding, setAdding] = useState(false);
@@ -70,9 +73,9 @@ export default function WnFoodCostPage() {
     const known = new Set(items.map((it) => it.id));
     const extra = Object.keys(sheet)
       .filter((k) => !known.has(k) && (sheet[k] ?? []).length > 0)
-      .map((k) => ({ key: k, label: savedLabels[k] || "Removed item", removed: true }));
+      .map((k) => ({ key: k, label: savedLabels[k] || copiedLabels[k] || "Removed item", removed: true }));
     return [...listed, ...extra];
-  }, [items, sheet, savedLabels]);
+  }, [items, sheet, savedLabels, copiedLabels]);
 
   const label = (key: string | null) => sections.find((s) => s.key === key)?.label ?? "";
 
@@ -97,14 +100,36 @@ export default function WnFoodCostPage() {
       const res = await fetch(`/api/wn/food-cost?date=${d}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load.");
-      const next: Sheet = {};
-      const labels: Record<string, string> = {};
-      (data.sections ?? []).forEach((s: any) => {
-        next[s.key] = rowsFromApi(s.rows);
-        labels[s.key] = s.label ?? "";
-      });
-      setSheet(next);
-      setSavedLabels(labels);
+      const toSheet = (list: any[]) => {
+        const sheet: Sheet = {};
+        const labels: Record<string, string> = {};
+        list.forEach((s: any) => {
+          sheet[s.key] = rowsFromApi(s.rows);
+          labels[s.key] = s.label ?? "";
+        });
+        return { sheet, labels };
+      };
+
+      // Nothing saved for this day yet → start from the last saved day.
+      if (!data.saved) {
+        const pres = await fetch(`/api/wn/food-cost?prevOf=${d}`);
+        const prev = await pres.json();
+        if (pres.ok && prev.date && (prev.sections ?? []).length) {
+          const copied = toSheet(prev.sections);
+          setSheet(copied.sheet);
+          setSavedLabels({});
+          setCopiedLabels(copied.labels);
+          setCopiedFrom(prev.date);
+          setDirty(false);
+          return;
+        }
+      }
+
+      const loaded = toSheet(data.sections ?? []);
+      setSheet(loaded.sheet);
+      setSavedLabels(loaded.labels);
+      setCopiedLabels({});
+      setCopiedFrom(null);
       setDirty(false);
     } catch (e) {
       setError((e as Error).message);
@@ -221,6 +246,8 @@ export default function WnFoodCostPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save.");
       setDirty(false);
+      setCopiedFrom(null);
+      setCopiedLabels({});
       setMessage("Saved.");
       // Match what's stored: blank rows dropped, labels remembered for this day.
       const labels: Record<string, string> = {};
@@ -299,6 +326,18 @@ export default function WnFoodCostPage() {
           )}
         </div>
       </div>
+
+      {copiedFrom && !loading && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p className="text-sm text-amber-200">
+            <span className="font-semibold text-amber-100">Not saved yet.</span> Copied from{" "}
+            <span className="font-semibold text-amber-100">{prettyDate(copiedFrom)}</span>. Change anything that is different, then save.
+          </p>
+          <button onClick={save} disabled={saving} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-400 disabled:opacity-50">
+            {saving ? "Saving…" : "Save this day"}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {sections.map((s) => (
@@ -502,8 +541,8 @@ export default function WnFoodCostPage() {
             <div className="flex items-center gap-3">
               {error && <span className="text-sm text-red-400">{error}</span>}
               {!error && message && <span className="text-sm text-emerald-400">{message}</span>}
-              {!error && !message && dirty && <span className="text-sm text-amber-400">Unsaved changes</span>}
-              <button onClick={save} disabled={saving || !dirty} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+              {!error && !message && (dirty || copiedFrom) && <span className="text-sm text-amber-400">{copiedFrom && !dirty ? "Copied, not saved yet" : "Unsaved changes"}</span>}
+              <button onClick={save} disabled={saving || (!dirty && !copiedFrom)} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
                 {saving ? "Saving…" : "Save day"}
               </button>
             </div>
