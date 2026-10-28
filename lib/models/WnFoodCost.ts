@@ -21,6 +21,9 @@ const SectionSchema = new Schema(
     key: { type: String, required: true },
     label: { type: String, default: "" },
     rows: { type: [IngredientSchema], default: [] },
+    // Set when this dish was carried forward from an earlier day (that day's date).
+    // Empty = entered by hand on this day (rows [] = deliberately nothing).
+    copiedFrom: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -29,7 +32,7 @@ const WnFoodCostSchema = new Schema(
   {
     date: { type: String, required: true, unique: true }, // YYYY-MM-DD
     sections: { type: [SectionSchema], default: [] },
-    // true = copied forward automatically, not yet saved by hand.
+    // true = the whole day was created automatically (never saved by hand).
     auto: { type: Boolean, default: false },
     copiedFrom: { type: String, default: "" }, // the day it was copied from
   },

@@ -28,6 +28,11 @@ interface Section {
 
 type Sheet = Record<string, Row[]>;
 
+const shortDay = (d: string) => {
+  const [y, m, day] = d.split("-").map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+};
+
 const emptyRow = (): Row => ({ name: "", qty: "", unit: "kg", custom: false, rate: "" });
 const n = (v: string) => Math.max(0, Number(v) || 0);
 const rowTotal = (r: Row) => n(r.qty) * n(r.rate);
@@ -61,8 +66,10 @@ export default function WnFoodCostPage() {
   // Set when an unsaved day was filled from the last saved day (date it came from).
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
   const [copiedLabels, setCopiedLabels] = useState<Record<string, string>>({});
-  // Set when this day was filled in automatically from an earlier day (already saved).
-  const [autoFrom, setAutoFrom] = useState<string | null>(null);
+  // Dishes on this day carried forward from an earlier day: key → that day's date.
+  const [copiedMap, setCopiedMap] = useState<Record<string, string>>({});
+  // Dishes edited on this page since loading (an edited dish emptied = cleared on purpose).
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
 
   const [adding, setAdding] = useState(false);
@@ -122,7 +129,8 @@ export default function WnFoodCostPage() {
           setSavedLabels({});
           setCopiedLabels(copied.labels);
           setCopiedFrom(prev.date);
-          setAutoFrom(null);
+          setCopiedMap({});
+          setTouched({});
           setDirty(false);
           return;
         }
@@ -133,7 +141,12 @@ export default function WnFoodCostPage() {
       setSavedLabels(loaded.labels);
       setCopiedLabels({});
       setCopiedFrom(null);
-      setAutoFrom(data.auto ? data.copiedFrom : null);
+      const cm: Record<string, string> = {};
+      (data.sections ?? []).forEach((s: any) => {
+        if (s.copiedFrom) cm[s.key] = s.copiedFrom;
+      });
+      setCopiedMap(cm);
+      setTouched({});
       setDirty(false);
     } catch (e) {
       setError((e as Error).message);
@@ -153,6 +166,14 @@ export default function WnFoodCostPage() {
 
   function update(key: string, fn: (rows: Row[]) => Row[]) {
     setSheet((s) => ({ ...s, [key]: fn(s[key] ?? []) }));
+    // Once edited, this dish counts as entered by hand for this day.
+    setCopiedMap((m) => {
+      if (!(key in m)) return m;
+      const next = { ...m };
+      delete next[key];
+      return next;
+    });
+    setTouched((t) => (t[key] ? t : { ...t, [key]: true }));
     setDirty(true);
     setMessage("");
   }
@@ -235,6 +256,8 @@ export default function WnFoodCostPage() {
       const payload = sections.map((s) => ({
         key: s.key,
         label: s.label,
+        copiedFrom: copiedMap[s.key] ?? "",
+        cleared: !!touched[s.key],
         rows: (sheet[s.key] ?? []).map((r) => ({
           name: r.name,
           qty: n(r.qty),
@@ -252,12 +275,8 @@ export default function WnFoodCostPage() {
       setDirty(false);
       setCopiedFrom(null);
       setCopiedLabels({});
-      setAutoFrom(null);
-      setMessage(
-        data.pushed
-          ? `Saved. Also updated the next ${data.pushed} auto-copied day${data.pushed === 1 ? "" : "s"}.`
-          : "Saved."
-      );
+      setTouched({});
+      setMessage("Saved. Later days now carry these figures forward.");
       // Match what's stored: blank rows dropped, labels remembered for this day.
       const labels: Record<string, string> = {};
       const next: Sheet = {};
@@ -336,9 +355,14 @@ export default function WnFoodCostPage() {
         </div>
       </div>
 
-      {autoFrom && !copiedFrom && !loading && (
+      {!copiedFrom && !loading && Object.keys(copiedMap).length > 0 && (
         <div className="rounded-2xl border border-brand-500/40 bg-brand-600/15 px-4 py-3 text-sm text-slate-300">
-          <span className="font-semibold text-white">Copied automatically</span> from {prettyDate(autoFrom)}. If anything was different today, change it and click Save day.
+          <span className="font-semibold text-white">Carried forward automatically:</span>{" "}
+          {sections
+            .filter((s) => copiedMap[s.key])
+            .map((s) => `${s.label} (from ${shortDay(copiedMap[s.key])})`)
+            .join(", ")}
+          . Change anything that was different on this day and click Save day.
         </div>
       )}
 
@@ -372,6 +396,9 @@ export default function WnFoodCostPage() {
               {s.label}
               {s.removed && <span className="text-slate-600"> (removed)</span>}
             </p>
+            {copiedMap[s.key] && (
+              <p className="mt-0.5 text-[11px] text-brand-300">copied · {shortDay(copiedMap[s.key])}</p>
+            )}
             <p className="mt-1 text-lg font-semibold text-white">₹{fmt(sectionTotals[s.key] ?? 0)}</p>
           </button>
         ))}
@@ -444,6 +471,11 @@ export default function WnFoodCostPage() {
                 {activeSection.label} — ingredients
                 {activeSection.removed && (
                   <span className="ml-2 font-normal text-slate-500">(removed from list, kept on this day)</span>
+                )}
+                {copiedMap[activeSection.key] && (
+                  <span className="ml-2 font-normal text-brand-300">
+                    copied from {shortDay(copiedMap[activeSection.key])} — edit to change it for this day
+                  </span>
                 )}
               </h2>
             )}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import WnFoodCost from "@/lib/models/WnFoodCost";
-import { fillFoodCostDays, pushForward } from "@/lib/foodCostFill";
+import { fillFoodCostDays } from "@/lib/foodCostFill";
 
 export const dynamic = "force-dynamic";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -10,6 +10,7 @@ function toSections(doc: any) {
   return (doc?.sections ?? []).map((s: any) => ({
     key: s.key,
     label: s.label ?? "",
+    copiedFrom: s.copiedFrom ?? "",
     rows: (s.rows ?? []).map((r: any) => ({
       name: r.name ?? "",
       qty: r.qty ?? 0,
@@ -21,7 +22,7 @@ function toSections(doc: any) {
 
 /**
  * GET /api/wn/food-cost?date=YYYY-MM-DD      → that day's sheet
- *   (first fills any missing days up to today with a copy of the day before)
+ *   (first carries every dish forward to all days up to today)
  * GET /api/wn/food-cost?prevOf=YYYY-MM-DD    → latest saved sheet before that day
  */
 export async function GET(request: Request) {
@@ -54,7 +55,6 @@ export async function GET(request: Request) {
       date,
       saved: Boolean(doc),
       auto: Boolean(doc?.auto),
-      copiedFrom: doc?.auto ? doc.copiedFrom || null : null,
       sections: toSections(doc),
     });
   } catch (err) {
@@ -69,8 +69,10 @@ export async function GET(request: Request) {
  * POST /api/wn/food-cost
  * Body: { date, sections: [{ key, label, rows: [{ name, qty, unit, rate }] }] }
  * Replaces that day's sheet. Rows without a name, and dishes with no rows, are dropped.
- * The day counts as saved by hand, and its sheet is pushed forward to the
- * following auto-copied days.
+ * Sections sent with copiedFrom are still copies (not edited); the rest count as
+ * entered by hand. A section with cleared: true and no rows = that dish
+ * deliberately cleared for the day. Afterwards every dish is carried forward
+ * again so later days pick up the change.
  */
 export async function POST(request: Request) {
   try {
@@ -97,19 +99,23 @@ export async function POST(request: Request) {
             unit: String(r.unit ?? "").trim() || "kg",
             rate: Math.max(0, Number(r.rate) || 0),
           })),
+        copiedFrom: typeof s.copiedFrom === "string" ? s.copiedFrom : "",
+        cleared: s.cleared === true,
       }))
-      .filter((s) => s.rows.length > 0);
+      // Keep a dish with no rows only when it was cleared by hand.
+      .filter((s) => s.rows.length > 0 || (s.cleared && !s.copiedFrom))
+      .map(({ cleared, ...s }) => s);
 
     await connectToDatabase();
 
-    // An emptied day is kept (not deleted) so auto-fill doesn't bring it back.
+    // Kept even when empty, so the day isn't recreated as a copy.
     await WnFoodCost.updateOne(
       { date },
       { $set: { date, sections, auto: false, copiedFrom: "" } },
       { upsert: true }
     );
-    const pushed = await pushForward(date);
-    return NextResponse.json({ ok: true, pushed });
+    await fillFoodCostDays();
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },
