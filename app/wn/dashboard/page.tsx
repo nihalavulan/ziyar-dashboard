@@ -7,6 +7,11 @@ const TILES = [
     description: "Daily ingredient costs for each dish.",
   },
   {
+    href: "/wn/dashboard/masala",
+    title: "Masala",
+    description: "Batch masala recipes and their cost per kg, used in Food Cost.",
+  },
+  {
     href: "/wn/dashboard/sop",
     title: "SOP Creator",
     description: "Daily tasks, responsibilities and KPIs for each team member.",

@@ -11,7 +11,7 @@ export function nextDay(s: string) {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
-type Row = { name: string; qty: number; unit: string; rate: number };
+type Row = { name: string; qty: number; unit: string; rate: number; masalaId: string };
 type Section = { key: string; label: string; rows: Row[]; copiedFrom: string };
 
 const plainRows = (rows: any[]): Row[] =>
@@ -20,6 +20,7 @@ const plainRows = (rows: any[]): Row[] =>
     qty: r.qty ?? 0,
     unit: r.unit ?? "kg",
     rate: r.rate ?? 0,
+    masalaId: r.masalaId ?? "",
   }));
 
 const plainSection = (s: any): Section => ({

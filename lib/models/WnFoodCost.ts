@@ -12,6 +12,7 @@ const IngredientSchema = new Schema(
     qty: { type: Number, default: 0 },
     unit: { type: String, default: "kg" },
     rate: { type: Number, default: 0 }, // cost of 1 unit
+    masalaId: { type: String, default: "" }, // set when this row is a masala (WnMasala id)
   },
   { _id: false }
 );

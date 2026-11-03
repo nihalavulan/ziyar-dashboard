@@ -16,6 +16,7 @@ function toSections(doc: any) {
       qty: r.qty ?? 0,
       unit: r.unit ?? "kg",
       rate: r.rate ?? 0,
+      masalaId: r.masalaId ?? "",
     })),
   }));
 }
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
             qty: Math.max(0, Number(r.qty) || 0),
             unit: String(r.unit ?? "").trim() || "kg",
             rate: Math.max(0, Number(r.rate) || 0),
+            masalaId: typeof r.masalaId === "string" ? r.masalaId : "",
           })),
         copiedFrom: typeof s.copiedFrom === "string" ? s.copiedFrom : "",
         cleared: s.cleared === true,

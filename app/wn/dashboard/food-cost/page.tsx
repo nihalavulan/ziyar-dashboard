@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { todayStr, shiftDate, prettyDate, fmt } from "@/app/dashboard/stock/shared";
+import { Masala, masalaRate, masalaUnits } from "@/lib/masala";
 
 const UNITS = ["kg", "g", "L", "ml", "pcs", "dozen", "packet"];
 const CUSTOM = "__custom__";
@@ -17,6 +19,7 @@ interface Row {
   unit: string;
   custom: boolean; // unit typed by hand instead of picked from UNITS
   rate: string;
+  masalaId: string; // set when this row is a masala from the Masala page
 }
 
 /** A dish shown on the page: one from the list, or one only found in this day's saved sheet. */
@@ -33,7 +36,7 @@ const shortDay = (d: string) => {
   return new Date(y, m - 1, day).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 };
 
-const emptyRow = (): Row => ({ name: "", qty: "", unit: "kg", custom: false, rate: "" });
+const emptyRow = (): Row => ({ name: "", qty: "", unit: "kg", custom: false, rate: "", masalaId: "" });
 const n = (v: string) => Math.max(0, Number(v) || 0);
 const rowTotal = (r: Row) => n(r.qty) * n(r.rate);
 
@@ -44,6 +47,7 @@ function rowsFromApi(rows: any[]): Row[] {
     unit: r.unit || "kg",
     custom: !UNITS.includes(r.unit || "kg"),
     rate: r.rate ? String(r.rate) : "",
+    masalaId: r.masalaId ?? "",
   }));
 }
 
@@ -56,6 +60,8 @@ export default function WnFoodCostPage() {
   useEffect(() => setMounted(true), []);
 
   const [items, setItems] = useState<Item[]>([]);
+  const [masalas, setMasalas] = useState<Masala[]>([]);
+  const [pickingMasala, setPickingMasala] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>({});
   const [savedLabels, setSavedLabels] = useState<Record<string, string>>({});
@@ -95,6 +101,10 @@ export default function WnFoodCostPage() {
   }, [sections, active]);
 
   useEffect(() => {
+    fetch("/api/wn/masalas")
+      .then((r) => r.json())
+      .then((d) => setMasalas(d.masalas ?? []))
+      .catch(() => {});
     fetch("/api/wn/food-items")
       .then((r) => r.json())
       .then((data) => setItems(data.items ?? []))
@@ -182,6 +192,17 @@ export default function WnFoodCostPage() {
     update(key, (rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
+  const masalaById = useMemo(() => new Map(masalas.map((m) => [m.id, m])), [masalas]);
+
+  function addMasalaRow(key: string, m: Masala) {
+    const unit = masalaUnits(m.yieldUnit)[1].unit; // used in g / ml
+    update(key, (rs) => [
+      ...rs,
+      { name: m.name, qty: "", unit, custom: false, rate: String(masalaRate(m, unit)), masalaId: m.id },
+    ]);
+    setPickingMasala(false);
+  }
+
   async function addItem() {
     const name = newName.trim();
     if (!name) return;
@@ -263,6 +284,7 @@ export default function WnFoodCostPage() {
           qty: n(r.qty),
           unit: r.unit,
           rate: n(r.rate),
+          masalaId: r.masalaId,
         })),
       }));
       const res = await fetch("/api/wn/food-cost", {
@@ -528,13 +550,51 @@ export default function WnFoodCostPage() {
                   {rows.map((r, i) => (
                     <tr key={i} className="border-t border-white/5">
                       <td className="px-4 py-2">
-                        <input className={inputCls} value={r.name} placeholder="e.g. Basmati rice" onChange={(e) => setField(activeSection.key, i, { name: e.target.value })} />
+                        {r.masalaId ? (
+                          <div className="flex items-center gap-2 px-1">
+                            <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">Masala</span>
+                            <span className="font-medium text-white">{r.name}</span>
+                          </div>
+                        ) : (
+                          <input className={inputCls} value={r.name} placeholder="e.g. Basmati rice" onChange={(e) => setField(activeSection.key, i, { name: e.target.value })} />
+                        )}
                       </td>
                       <td className="px-2 py-2">
                         <input className={inputCls} type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={(e) => setField(activeSection.key, i, { qty: e.target.value })} />
                       </td>
                       <td className="px-2 py-2">
-                        {r.custom ? (
+                        {r.masalaId ? (
+                          (() => {
+                            const m = masalaById.get(r.masalaId);
+                            const opts = masalaUnits(m?.yieldUnit ?? (r.unit === "L" || r.unit === "ml" ? "L" : "kg"));
+                            return (
+                              <select
+                                className={inputCls}
+                                value={r.unit}
+                                onChange={(e) =>
+                                  setField(activeSection.key, i, {
+                                    unit: e.target.value,
+                                    // keep the same price, just per the new unit
+                                    rate: m
+                                      ? String(masalaRate(m, e.target.value))
+                                      : String(
+                                          Math.round(
+                                            n(r.rate) *
+                                              ((opts.find((o) => o.unit === r.unit)?.perYield ?? 1) /
+                                                (opts.find((o) => o.unit === e.target.value)?.perYield ?? 1)) *
+                                              10000
+                                          ) / 10000
+                                        ),
+                                  })
+                                }
+                              >
+                                {opts.map((o) => (
+                                  <option key={o.unit} value={o.unit}>{o.unit}</option>
+                                ))}
+                              </select>
+                            );
+                          })()
+                        ) : r.custom ? (
                           <div className="flex gap-1">
                             <input className={inputCls} value={r.unit} placeholder="unit" autoFocus onChange={(e) => setField(activeSection.key, i, { unit: e.target.value })} />
                             <button onClick={() => setField(activeSection.key, i, { custom: false, unit: "kg" })} className="rounded-lg px-2 text-slate-500 hover:bg-white/5 hover:text-slate-300" aria-label="Pick a standard unit">↺</button>
@@ -558,6 +618,21 @@ export default function WnFoodCostPage() {
                       </td>
                       <td className="px-2 py-2">
                         <input className={inputCls} type="number" min="0" step="any" inputMode="decimal" value={r.rate} onChange={(e) => setField(activeSection.key, i, { rate: e.target.value })} />
+                        {r.masalaId &&
+                          (() => {
+                            const m = masalaById.get(r.masalaId);
+                            if (!m) return <p className="mt-0.5 text-[10px] text-slate-500">masala deleted</p>;
+                            const current = masalaRate(m, r.unit);
+                            return Math.abs(current - n(r.rate)) > 0.00005 ? (
+                              <button
+                                onClick={() => setField(activeSection.key, i, { rate: String(current) })}
+                                className="mt-0.5 text-[10px] text-amber-300 hover:underline"
+                                title="The masala recipe changed since this was entered"
+                              >
+                                ↻ use current ₹{current}
+                              </button>
+                            ) : null;
+                          })()}
                       </td>
                       <td className="px-2 py-2 text-right font-medium text-white">{fmt(rowTotal(r))}</td>
                       <td className="px-2 py-2 text-right">
@@ -582,9 +657,44 @@ export default function WnFoodCostPage() {
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
-            <button onClick={() => update(activeSection.key, (rs) => [...rs, emptyRow()])} className="rounded-lg border border-dashed border-white/20 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5">
-              + Add ingredient
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => update(activeSection.key, (rs) => [...rs, emptyRow()])} className="rounded-lg border border-dashed border-white/20 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5">
+                + Add ingredient
+              </button>
+              {pickingMasala ? (
+                <div className="flex items-center gap-1">
+                  {masalas.length === 0 ? (
+                    <span className="text-sm text-slate-400">
+                      No masalas yet —{" "}
+                      <Link href="/wn/dashboard/masala" className="text-brand-300 underline">create one</Link>
+                    </span>
+                  ) : (
+                    <select
+                      autoFocus
+                      className={`${inputCls} w-56`}
+                      defaultValue=""
+                      onChange={(e) => {
+                        const m = masalaById.get(e.target.value);
+                        if (m) addMasalaRow(activeSection.key, m);
+                      }}
+                    >
+                      <option value="" disabled>Pick a masala…</option>
+                      {masalas.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                          {m.yieldQty > 0 ? ` — ₹${fmt(masalaRate(m, m.yieldUnit))}/${m.yieldUnit}` : " — batch size not set"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button onClick={() => setPickingMasala(false)} className="rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/5">Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setPickingMasala(true)} className="rounded-lg border border-dashed border-amber-500/40 px-3 py-1.5 text-sm text-amber-200 hover:bg-amber-500/10">
+                  + Add masala
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               {error && <span className="text-sm text-red-400">{error}</span>}
               {!error && message && <span className="text-sm text-emerald-400">{message}</span>}
