@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 const NAV = [
   { href: "/wn/dashboard", label: "Home" },
   { href: "/wn/dashboard/food-cost", label: "Food Cost" },
+  { href: "/wn/dashboard/food-cost/new", label: "Alfahm Cost" },
   { href: "/wn/dashboard/masala", label: "Masala" },
   { href: "/wn/dashboard/sop", label: "SOP Creator" },
   { href: "/wn/dashboard/kitchen", label: "Kitchen Staff" },
@@ -20,6 +21,10 @@ export default function WnShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  // Highlight the most specific tab (so /food-cost/new doesn't also light up Food Cost).
+  const activeHref = NAV.map((n) => n.href)
+    .filter((h) => pathname === h || pathname.startsWith(h + "/"))
+    .sort((a, b) => b.length - a.length)[0];
 
   async function handleLock() {
     await fetch("/api/wn/logout", { method: "POST" });
@@ -61,7 +66,7 @@ export default function WnShell({
               key={item.href}
               href={item.href}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
-                (item.href === "/wn/dashboard" ? pathname === item.href : pathname.startsWith(item.href))
+                item.href === activeHref
                   ? "bg-white/10 font-medium text-white"
                   : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
               }`}
